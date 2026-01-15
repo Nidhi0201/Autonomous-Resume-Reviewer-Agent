@@ -7,8 +7,13 @@ import json
 from pathlib import Path
 
 # Add backend to Python path
+# In Netlify, base directory is frontend/, so backend is at ../backend
 backend_path = Path(__file__).parent.parent.parent.parent / "backend"
-sys.path.insert(0, str(backend_path))
+# Also try relative path from frontend/
+if not backend_path.exists():
+    backend_path = Path(__file__).parent.parent.parent / ".." / "backend"
+if backend_path.exists():
+    sys.path.insert(0, str(backend_path.resolve()))
 
 from app.llm import call_bullet_improvement_for_relevance
 from app.embeddings import _calculate_simple_relevance

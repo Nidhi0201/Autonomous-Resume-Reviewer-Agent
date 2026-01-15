@@ -1,9 +1,12 @@
 # Netlify Functions requirements
-# Copy from backend/requirements.txt and add mangum
+# All dependencies needed for backend to run as serverless functions
 fastapi>=0.115.0
-langgraph>=0.2.0
-langchain-core>=0.3.0
+uvicorn[standard]==0.30.6
+langgraph==0.2.36
+pydantic==2.9.2
+pydantic-settings==2.5.2
+python-dotenv==1.0.1
+pdfplumber==0.11.4
+python-docx==1.1.2
+python-multipart==0.0.9
 groq>=0.11.0
-pydantic>=2.0.0
-pydantic-settings>=2.0.0
-mangum>=0.17.0
