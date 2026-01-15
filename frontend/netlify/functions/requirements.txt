@@ -1,0 +1,9 @@
+# Netlify Functions requirements
+# Copy from backend/requirements.txt and add mangum
+fastapi>=0.115.0
+langgraph>=0.2.0
+langchain-core>=0.3.0
+groq>=0.11.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+mangum>=0.17.0

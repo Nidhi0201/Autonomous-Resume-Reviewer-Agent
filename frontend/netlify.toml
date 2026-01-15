@@ -1,0 +1,28 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[build.environment]
+  NODE_VERSION = "18"
+  PYTHON_VERSION = "3.11"
+
+# Netlify Functions configuration
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+  
+# Python runtime for functions
+[[functions]]
+  function = "analyze"
+  runtime = "python3.11"
+  
+[[functions]]
+  function = "improve-bullet"
+  runtime = "python3.11"
+  
+[[functions]]
+  function = "health"
+  runtime = "python3.11"
