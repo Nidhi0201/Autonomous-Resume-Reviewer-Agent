@@ -215,7 +215,7 @@ export default function Home() {
                 Job Description
               </CardTitle>
               <CardDescription className="text-gray-600">
-                Paste the job description you're applying for
+                Paste the job description you are applying for
               </CardDescription>
             </CardHeader>
             <CardContent className="pt-6">
