@@ -8,14 +8,12 @@ import { Badge } from "@/components/ui/badge"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Loader2, CheckCircle2, AlertCircle, FileText, Sparkles, TrendingUp, Target, ArrowUpCircle } from "lucide-react"
 
-// Auto-detect API URL: Use Netlify Functions in production, localhost in development
+// API base URL
+// - In browser (Netlify or any domain): use Netlify Functions under same origin
+// - On server (if ever used): fall back to env var or localhost
 const getApiUrl = () => {
-  if (typeof window !== 'undefined') {
-    // Client-side: Use Netlify Functions if on Netlify domain, otherwise use env var or localhost
-    const isNetlify = window.location.hostname.includes('netlify.app')
-    if (isNetlify) {
-      return `${window.location.origin}/.netlify/functions`
-    }
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}/.netlify/functions`
   }
   return process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 }
