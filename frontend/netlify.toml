@@ -11,18 +11,5 @@
 
 # Netlify Functions configuration
 [functions]
+  # Where your serverless functions live (relative to frontend/)
   directory = "netlify/functions"
-  node_bundler = "esbuild"
-  
-# Python runtime for functions
-[[functions]]
-  function = "analyze"
-  runtime = "python3.11"
-  
-[[functions]]
-  function = "improve-bullet"
-  runtime = "python3.11"
-  
-[[functions]]
-  function = "health"
-  runtime = "python3.11"
