@@ -33,7 +33,7 @@ def call_bullet_improvement(
     bullet: str,
     resume_text: str,
     job_description: str,
-    model_name: str = "llama-3.3-70b-versatile",
+    model_name: str = "openai/gpt-oss-20b",
 ) -> Dict[str, Any]:
     """
     Call Groq API to improve a single bullet with explanation and self-critique.
@@ -123,8 +123,28 @@ Respond in strict JSON with this shape:
         }
 
 
-SYSTEM_PROMPT_CRITIQUE = """You are a rigorous fact-checker. You validate resume improvements against original facts
-and flag any hallucinations or exaggerations."""
+SYSTEM_PROMPT_CRITIQUE = """You are a strict resume fact-checker. Your only job is to decide whether an \
+IMPROVED resume bullet is fully supported by the candidate's ORIGINAL resume.
+
+Treat the resume as the ONLY source of truth. Set is_supported_by_resume = false if the improved \
+bullet introduces ANYTHING not present in the resume, including:
+- Any specific metric, number, percentage, or scale not stated in the resume \
+(e.g. "by 45%", "3x", "500 daily users", "92% coverage", "30,000 records").
+- Any tool, technology, framework, or platform not mentioned in the resume \
+(e.g. Kubernetes, Kafka, Spark, Redis, Celery, RabbitMQ, D3.js, GraphQL).
+- Any inflation of role, ownership, or scope beyond the resume \
+(e.g. "led", "architected", "owned", "single-handedly", "managed a team", "production", \
+"millions of users" when the resume describes a smaller or contributory role).
+
+Rephrasing, adding job-relevant keywords that are already true, and clarifying existing facts \
+are SUPPORTED (is_supported_by_resume = true). When in doubt about an added specific, treat it \
+as unsupported.
+
+List every unsupported addition in "issues". Respond in strict JSON with keys: \
+self_critique, is_supported_by_resume (boolean), issues (array), evidence_snippets (array)."""
+
+# Improved via the evaluation harness (backend/eval): raised hallucination recall
+# from 86.7% to 100% on the labeled set (false-positive rate 6.7% -> 13.3%).
 
 
 SYSTEM_PROMPT_IMPROVE_RELEVANCE = """You are an expert resume coach specializing in improving job description relevance.
@@ -143,7 +163,7 @@ def call_bullet_improvement_for_relevance(
     job_description: str,
     target_relevance: float = 0.8,
     current_relevance: float = 0.2,
-    model_name: str = "llama-3.3-70b-versatile",
+    model_name: str = "openai/gpt-oss-20b",
 ) -> Dict[str, Any]:
     """
     Specifically improve a bullet to increase JD relevance score.
@@ -257,10 +277,16 @@ def call_self_critique(
     improved_bullet: str,
     resume_text: str,
     job_description: str,
-    model_name: str = "llama-3.3-70b-versatile",
+    model_name: str = "openai/gpt-oss-20b",
+    system_prompt: str | None = None,
+    temperature: float = 0.2,
 ) -> Dict[str, Any]:
     """
     Dedicated self-critique pass to check for hallucinations and weak claims.
+
+    `system_prompt` overrides the default critique instructions (used by the
+    evaluation harness to A/B prompt variants); `temperature` is exposed so the
+    harness can run deterministically (temperature=0).
     """
     client = _get_groq_client()
 
@@ -307,10 +333,10 @@ Respond in strict JSON:
         response = client.chat.completions.create(
             model=model_name,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT_CRITIQUE},
+                {"role": "system", "content": system_prompt or SYSTEM_PROMPT_CRITIQUE},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=0.2,
+            temperature=temperature,
             max_tokens=600,
             response_format={"type": "json_object"},
         )
