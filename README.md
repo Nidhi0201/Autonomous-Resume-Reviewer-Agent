@@ -162,8 +162,12 @@ Using the harness to improve the critique prompt (`--compare` runs both):
 | baseline (original) | 86.7% (13/15) | 6.7% | 90.0% |
 | **improved** (now in `llm.py`) | **100% (15/15)** | 13.3% | **93.3%** |
 
-The stricter prompt catches every injected hallucination; the tradeoff is a
-higher false-positive rate (it occasionally flags a truthful rewrite). Reproduce:
+On this 30-example labeled set the stricter prompt caught all 15 injected
+hallucinations; the tradeoff is a higher false-positive rate (2 of 15 truthful
+rewrites were flagged). These are results on a small, synthetic dataset — not a
+general hallucination-detection rate — and they depend on the Groq model
+version. There is no automated test suite in this repository beyond this
+evaluation harness. Reproduce:
 
 ```bash
 cd backend && python -m eval.run_eval --compare   # needs GROQ_API_KEY
