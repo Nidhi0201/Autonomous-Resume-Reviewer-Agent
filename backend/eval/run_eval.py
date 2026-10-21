@@ -23,7 +23,10 @@ from pathlib import Path
 
 from app.llm import call_self_critique
 
-DATASET = Path(__file__).parent / "dataset.json"
+EVAL_DIR = Path(__file__).parent
+DATASET = EVAL_DIR / "dataset.json"
+DATASET_REALISTIC = EVAL_DIR / "dataset_realistic.json"
+DATASETS = {"synthetic": DATASET, "realistic": DATASET_REALISTIC}
 
 # The original (weak) critique prompt, kept as a literal so the A/B stays
 # reproducible even after the app adopts the improved prompt below.
@@ -82,6 +85,13 @@ def _critique_with_retry(ex, system_prompt, retries=4):
         # Don't retry non-transient failures (bad model id, auth, etc.).
         if "does not exist" in crit or "invalid_api_key" in crit or "404" in crit:
             raise RuntimeError(f"Non-transient Groq error: {crit[:160]}")
+        # Daily token quota exhausted — retrying costs more quota and will
+        # keep failing for hours. Surface it loudly instead of spinning.
+        if "tokens per day" in crit or "TPD" in crit or "Upgrade to Dev Tier" in crit:
+            raise RuntimeError(
+                "Groq daily token quota exhausted — eval cannot continue. "
+                "Wait for the daily reset or upgrade the Groq plan, then rerun."
+            )
         if any("api_error" in str(i) or "not_json" in str(i) for i in issues):
             time.sleep(2 * (attempt + 1))  # backoff on rate-limit / transient
             continue
@@ -89,8 +99,8 @@ def _critique_with_retry(ex, system_prompt, retries=4):
     return result
 
 
-def evaluate(prompt_key: str, pace_s: float = 2.0) -> dict:
-    data = json.loads(DATASET.read_text())
+def evaluate(prompt_key: str, dataset_path: Path = DATASET, pace_s: float = 2.0) -> dict:
+    data = json.loads(dataset_path.read_text())
     global SHARED_JD
     SHARED_JD = data["shared_job_description"]
     examples = data["examples"]
@@ -98,6 +108,7 @@ def evaluate(prompt_key: str, pace_s: float = 2.0) -> dict:
 
     tp = fp = tn = fn = 0
     per_type = {}  # type -> [caught, total]
+    mistakes = []  # (id, label, type, flagged) for FN + FP
     for ex in examples:
         flagged = _is_flagged(_critique_with_retry(ex, system_prompt))
         hallucinated = ex["label"] == "hallucinated"
@@ -109,9 +120,13 @@ def evaluate(prompt_key: str, pace_s: float = 2.0) -> dict:
                 per_type[ex["type"]][0] += 1
             else:
                 fn += 1
+                mistakes.append({"id": ex["id"], "mistake": "false_negative",
+                                 "type": ex["type"], "rewrite": ex["rewrite"]})
         else:
             if flagged:
                 fp += 1
+                mistakes.append({"id": ex["id"], "mistake": "false_positive",
+                                 "type": None, "rewrite": ex["rewrite"]})
             else:
                 tn += 1
         time.sleep(pace_s)  # stay under the free-tier ~30 req/min limit
@@ -120,14 +135,16 @@ def evaluate(prompt_key: str, pace_s: float = 2.0) -> dict:
     fp_rate = fp / (fp + tn) if (fp + tn) else 0.0
     precision = tp / (tp + fp) if (tp + fp) else 0.0
     accuracy = (tp + tn) / (tp + tn + fp + fn)
-    return {"prompt": prompt_key, "tp": tp, "fp": fp, "tn": tn, "fn": fn,
+    return {"prompt": prompt_key, "dataset": dataset_path.name,
+            "n": len(examples), "tp": tp, "fp": fp, "tn": tn, "fn": fn,
             "recall": recall, "false_positive_rate": fp_rate,
-            "precision": precision, "accuracy": accuracy, "per_type": per_type}
+            "precision": precision, "accuracy": accuracy,
+            "per_type": per_type, "mistakes": mistakes}
 
 
 def _print_report(r: dict) -> None:
     print("\n" + "=" * 58)
-    print(f"SELF-CRITIQUE EVAL  —  prompt: {r['prompt']}")
+    print(f"SELF-CRITIQUE EVAL  —  prompt: {r['prompt']}  dataset: {r['dataset']}  n: {r['n']}")
     print("=" * 58)
     print(f"  hallucination recall     {r['recall']*100:5.1f}%   ({r['tp']}/{r['tp']+r['fn']} caught)")
     print(f"  false-positive rate      {r['false_positive_rate']*100:5.1f}%   ({r['fp']}/{r['fp']+r['tn']} faithful flagged)")
@@ -135,7 +152,7 @@ def _print_report(r: dict) -> None:
     print(f"  accuracy                 {r['accuracy']*100:5.1f}%")
     print("  recall by hallucination type:")
     for t, (caught, total) in sorted(r["per_type"].items()):
-        print(f"    {t:<18} {caught}/{total}")
+        print(f"    {t:<22} {caught}/{total}")
     print("=" * 58)
 
 
@@ -143,18 +160,31 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--prompt", choices=list(PROMPTS), default="baseline")
     ap.add_argument("--compare", action="store_true", help="run both prompts and show before/after")
+    ap.add_argument("--dataset", choices=list(DATASETS), default="synthetic",
+                    help="which labeled set to evaluate on")
+    ap.add_argument("--save", type=str, default=None,
+                    help="write the raw results dict to this JSON path")
     args = ap.parse_args()
 
+    dataset_path = DATASETS[args.dataset]
+
     if args.compare:
-        results = {k: evaluate(k) for k in ("baseline", "improved")}
+        results = {k: evaluate(k, dataset_path) for k in ("baseline", "improved")}
         for k in ("baseline", "improved"):
             _print_report(results[k])
         b, i = results["baseline"], results["improved"]
         print("\nBEFORE -> AFTER")
         print(f"  recall            {b['recall']*100:5.1f}%  ->  {i['recall']*100:5.1f}%")
         print(f"  false-positive    {b['false_positive_rate']*100:5.1f}%  ->  {i['false_positive_rate']*100:5.1f}%")
+        payload = results
     else:
-        _print_report(evaluate(args.prompt))
+        res = evaluate(args.prompt, dataset_path)
+        _print_report(res)
+        payload = {args.prompt: res}
+
+    if args.save:
+        Path(args.save).write_text(json.dumps(payload, indent=2))
+        print(f"\nwrote raw results to {args.save}")
 
 
 if __name__ == "__main__":
